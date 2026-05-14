@@ -1,0 +1,32 @@
+# render.yaml
+# ─────────────────────────────────────────────────────────────────────────────
+# This file tells Render.com how to deploy your backend automatically.
+# Commit it to the ROOT of your backend repo, then connect on render.com.
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+  - type: web               # Deploy as a web service (has an HTTP endpoint)
+    name: jobportal-api     # The name shown in the Render dashboard
+    runtime: node
+    plan: free              # Free tier — upgrade when you need more resources
+
+    # Render runs this command to build the app (install dependencies)
+    buildCommand: npm install
+
+    # Render runs this to start the server
+    startCommand: npm start
+
+    # Health check: Render pings this URL to verify the server is running
+    # If it returns 200 → healthy. If not → Render redeploys automatically.
+    healthCheckPath: /health
+
+    # Environment variables — set these in the Render dashboard under "Environment"
+    # DO NOT put real secrets in this file — use the dashboard for production values
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 5000
+      # Set these in Render dashboard (not here):
+      # DATABASE_URL, JWT_SECRET, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET,
+      # GOOGLE_CALLBACK_URL, SESSION_SECRET, FRONTEND_URL
