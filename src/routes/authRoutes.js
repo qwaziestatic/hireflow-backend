@@ -1,13 +1,8 @@
 // src/routes/authRoutes.js
-// ─────────────────────────────────────────────────────────────────────────────
-// Defines URL patterns for authentication endpoints.
-// Routes connect URLs + HTTP methods → to controller functions.
-// Validation rules are defined inline using express-validator.
-// ─────────────────────────────────────────────────────────────────────────────
 
 const express = require("express");
-const router = express.Router(); // Creates a mini Express app for grouping routes
-const { body } = require("express-validator"); // For validating request body fields
+const router = express.Router();
+const { body } = require("express-validator");
 const passport = require("passport");
 
 const {
@@ -21,34 +16,103 @@ const {
 const { authenticate } = require("../middleware/auth");
 const { validate } = require("../middleware/errorHandler");
 
-// ── POST /api/auth/register ───────────────────────────────────────────────────
-// Validation rules run BEFORE the controller.
-// If any rule fails, validate() returns 422 with error details.
+/**
+ * @swagger
+ * /api/auth/register:
+ *   post:
+ *     summary: Register a new account
+ *     tags: [Auth]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [name, email, password]
+ *             properties:
+ *               name:
+ *                 type: string
+ *                 example: Alice Jobseeker
+ *               email:
+ *                 type: string
+ *                 format: email
+ *                 example: alice@example.com
+ *               password:
+ *                 type: string
+ *                 minLength: 6
+ *                 example: password123
+ *               role:
+ *                 type: string
+ *                 enum: [jobseeker, employer]
+ *                 default: jobseeker
+ *                 example: jobseeker
+ *     responses:
+ *       201:
+ *         description: Account created successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/AuthResponse'
+ *       409:
+ *         description: Email already registered
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       422:
+ *         description: Validation failed
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 router.post(
   "/register",
   [
-    body("name")
-      .trim()                          // Remove leading/trailing spaces
-      .notEmpty().withMessage("Name is required")
-      .isLength({ max: 100 }).withMessage("Name too long"),
-
-    body("email")
-      .trim()
-      .isEmail().withMessage("Valid email is required")
-      .normalizeEmail(),               // Converts to lowercase, removes dots in Gmail
-
-    body("password")
-      .isLength({ min: 6 }).withMessage("Password must be at least 6 characters"),
-
-    body("role")
-      .optional()
-      .isIn(["jobseeker", "employer"]).withMessage("Role must be jobseeker or employer"),
+    body("name").trim().notEmpty().withMessage("Name is required").isLength({ max: 100 }).withMessage("Name too long"),
+    body("email").trim().isEmail().withMessage("Valid email is required").normalizeEmail(),
+    body("password").isLength({ min: 6 }).withMessage("Password must be at least 6 characters"),
+    body("role").optional().isIn(["jobseeker", "employer"]).withMessage("Role must be jobseeker or employer"),
   ],
-  validate,   // Check results of above rules — returns 422 if any failed
-  register    // Run the actual controller
+  validate,
+  register
 );
 
-// ── POST /api/auth/login ──────────────────────────────────────────────────────
+/**
+ * @swagger
+ * /api/auth/login:
+ *   post:
+ *     summary: Login with email and password
+ *     tags: [Auth]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [email, password]
+ *             properties:
+ *               email:
+ *                 type: string
+ *                 format: email
+ *                 example: bob@example.com
+ *               password:
+ *                 type: string
+ *                 example: password
+ *     responses:
+ *       200:
+ *         description: Login successful
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/AuthResponse'
+ *       401:
+ *         description: Invalid email or password
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 router.post(
   "/login",
   [
@@ -59,36 +123,128 @@ router.post(
   login
 );
 
-// ── GET /api/auth/google ───────────────────────────────────────────────────────
-// Redirects user to Google's consent screen.
-// 'scope' tells Google what info we want access to.
-router.get(
-  "/google",
-  passport.authenticate("google", {
-    scope: ["profile", "email"], // Request access to profile and email
-    // NOTE: No session:false here — Passport needs the session during the
-    // OAuth redirect. The state parameter stored in session prevents CSRF attacks.
-  })
-);
+/**
+ * @swagger
+ * /api/auth/google:
+ *   get:
+ *     summary: Redirect to Google OAuth consent screen
+ *     tags: [Auth]
+ *     description: Redirects the browser to Google's sign-in page. Not testable directly in Swagger — visit the URL in a browser.
+ *     responses:
+ *       302:
+ *         description: Redirect to Google consent screen
+ */
 
-// ── GET /api/auth/google/callback ─────────────────────────────────────────────
-// Google redirects here after user approves.
-// Passport runs GoogleStrategy, finds/creates user, sets req.user.
-// Then our googleCallback controller fires and redirects to frontend with JWT.
-router.get(
-  "/google/callback",
-  passport.authenticate("google", {
-    failureRedirect: `${process.env.FRONTEND_URL}/login?error=google_failed`,
-    session: false,
-  }),
-  googleCallback
-);
+/**
+ * @swagger
+ * /api/auth/google/callback:
+ *   get:
+ *     summary: Google OAuth2 callback handler
+ *     tags: [Auth]
+ *     description: Google redirects here after user approves. Returns a JWT and redirects to the frontend.
+ *     responses:
+ *       302:
+ *         description: Redirect to frontend with JWT token in URL query string
+ */
 
-// ── GET /api/auth/me ──────────────────────────────────────────────────────────
-// authenticate middleware verifies JWT, sets req.user, then getMe controller runs
+if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
+  router.get(
+    "/google",
+    passport.authenticate("google", { scope: ["profile", "email"] })
+  );
+  router.get(
+    "/google/callback",
+    passport.authenticate("google", {
+      failureRedirect: `${process.env.FRONTEND_URL}/login?error=google_failed`,
+      session: false,
+    }),
+    googleCallback
+  );
+} else {
+  router.get("/google", (req, res) => {
+    res.status(503).json({ success: false, message: "Google OAuth is not configured on this server." });
+  });
+  router.get("/google/callback", (req, res) => {
+    res.redirect(`${process.env.FRONTEND_URL || "http://localhost:5173"}/login?error=google_not_configured`);
+  });
+}
+
+/**
+ * @swagger
+ * /api/auth/me:
+ *   get:
+ *     summary: Get current logged-in user
+ *     tags: [Auth]
+ *     security:
+ *       - BearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Current user profile
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 user:
+ *                   $ref: '#/components/schemas/User'
+ *       401:
+ *         description: Unauthorized — missing or invalid token
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 router.get("/me", authenticate, getMe);
 
-// ── PUT /api/auth/profile ─────────────────────────────────────────────────────
+/**
+ * @swagger
+ * /api/auth/profile:
+ *   put:
+ *     summary: Update user profile
+ *     tags: [Auth]
+ *     security:
+ *       - BearerAuth: []
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               name:
+ *                 type: string
+ *                 example: Alice Updated
+ *               bio:
+ *                 type: string
+ *                 example: Full-stack developer with 4 years experience
+ *               location:
+ *                 type: string
+ *                 example: Addis Ababa, Ethiopia
+ *               resume_url:
+ *                 type: string
+ *                 example: https://drive.google.com/my-resume
+ *               avatar:
+ *                 type: string
+ *                 example: https://imgur.com/my-photo.jpg
+ *     responses:
+ *       200:
+ *         description: Profile updated successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 message:
+ *                   type: string
+ *                 user:
+ *                   $ref: '#/components/schemas/User'
+ *       401:
+ *         description: Unauthorized
+ */
 router.put(
   "/profile",
   authenticate,

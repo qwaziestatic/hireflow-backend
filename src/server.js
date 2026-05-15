@@ -8,12 +8,14 @@
 require("dotenv").config(); // Load .env variables FIRST before anything else
 
 const express = require("express");
-const cors = require("cors");           // Allows frontend (different origin) to call API
-const helmet = require("helmet");       // Sets security-related HTTP headers automatically
-const morgan = require("morgan");       // Logs every HTTP request to the console
-const session = require("express-session"); // Needed for Passport OAuth session flow
-const rateLimit = require("express-rate-limit"); // Prevents brute-force/spam attacks
-const passport = require("./config/passport"); // Our Passport strategies
+const cors = require("cors");
+const helmet = require("helmet");
+const morgan = require("morgan");
+const session = require("express-session");
+const rateLimit = require("express-rate-limit");
+const passport = require("./config/passport");
+const swaggerUi = require("swagger-ui-express");
+const swaggerSpec = require("./config/swagger");
 
 // Import all route files
 const authRoutes = require("./routes/authRoutes");
@@ -24,8 +26,8 @@ const savedJobRoutes = require("./routes/savedJobRoutes");
 
 const { errorHandler } = require("./middleware/errorHandler");
 
-const app = express(); // Create the Express application
-const PORT = process.env.PORT || 5000; // Use PORT from .env or default to 5000
+const app = express();
+const PORT = process.env.PORT || 5000;
 
 // ── SECURITY MIDDLEWARE ───────────────────────────────────────────────────────
 
@@ -89,8 +91,61 @@ app.use(
 app.use(passport.initialize());
 app.use(passport.session()); // Required for OAuth redirect sessions
 
+// ── SWAGGER UI ────────────────────────────────────────────────────────────────
+// Interactive API documentation — available at /api-docs
+// Helmet blocks inline scripts by default, so we disable CSP for this route only
+app.use("/api-docs", (req, res, next) => {
+  res.setHeader("Content-Security-Policy", "");
+  next();
+}, swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
+  customSiteTitle: "HireFlow API Docs",
+  customCss: `
+    .swagger-ui .topbar { background: #1a1a2e; }
+    .swagger-ui .topbar .download-url-wrapper { display: none; }
+    .swagger-ui .info .title { color: #2E4FA3; }
+  `,
+  swaggerOptions: {
+    persistAuthorization: true, // Token stays after page refresh
+    displayRequestDuration: true,
+    filter: true,
+  },
+}));
+
+// Also expose the raw JSON spec at /api-docs.json
+app.get("/api-docs.json", (req, res) => {
+  res.setHeader("Content-Type", "application/json");
+  res.send(swaggerSpec);
+});
+
 // ── HEALTH CHECK ROUTE ────────────────────────────────────────────────────────
-// GET /health — used by Render.com to check if the server is alive
+/**
+ * @swagger
+ * /health:
+ *   get:
+ *     summary: Server health check
+ *     tags: [Health]
+ *     description: Returns server status. Used by Render.com to verify the service is alive.
+ *     responses:
+ *       200:
+ *         description: Server is running
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: Job Portal API is running
+ *                 environment:
+ *                   type: string
+ *                   example: production
+ *                 timestamp:
+ *                   type: string
+ *                   format: date-time
+ */
 app.get("/health", (req, res) => {
   res.json({
     success: true,
